@@ -299,21 +299,29 @@ const ChatInterface = () => {
     if (!selectedAudioFile || !isConnected || !clientRef.current) return;
     
     try {
+      // Keep existing configuration, just disable transcription
+      const currentConfig = clientRef.current.session || {};
+      await clientRef.current.configure({
+        ...currentConfig,
+        input_audio_transcription: null,
+        turn_detection: null
+      });
+
       const pcmData = await processWavFile(selectedAudioFile);
       
       // Send audio in chunks
-      const CHUNK_SIZE = 4800; // 100ms at 24kHz, 16-bit
+      const CHUNK_SIZE = 4800;
       for (let i = 0; i < pcmData.length; i += CHUNK_SIZE) {
         const chunk = pcmData.slice(i, i + CHUNK_SIZE);
         await clientRef.current.sendAudio(chunk);
       }
       
-      const inputAudioItem = await clientRef.current.commitAudio();
-      await inputAudioItem.waitForCompletion();
-      
-      // Process response
+      await clientRef.current.commitAudio();
       const response = await clientRef.current.generateResponse();
-      handleResponse(response);
+      
+      if (response) {
+        await handleResponse(response);
+      }
     } catch (error) {
       console.error("Error processing audio:", error);
     }
