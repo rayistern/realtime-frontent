@@ -5,77 +5,75 @@ import path from "path";
 // Ensure the route runs in the Node.js runtime (not Edge)
 export const runtime = 'nodejs';
 
-// Function to create a WAV file buffer from PCM data
-function createWavBuffer(pcmData: Buffer, sampleRate: number, numChannels: number) {
-  const byteRate = sampleRate * numChannels * 2; // 16-bit audio, so 2 bytes per sample
-  const blockAlign = numChannels * 2;
-  const wavHeader = Buffer.alloc(44);
-
-  // RIFF chunk descriptor
-  wavHeader.write('RIFF', 0); // ChunkID
-  wavHeader.writeUInt32LE(36 + pcmData.length, 4); // ChunkSize
-  wavHeader.write('WAVE', 8); // Format
-
-  // fmt sub-chunk
-  wavHeader.write('fmt ', 12); // Subchunk1ID
-  wavHeader.writeUInt32LE(16, 16); // Subchunk1Size (16 for PCM)
-  wavHeader.writeUInt16LE(1, 20); // AudioFormat (1 for PCM)
-  wavHeader.writeUInt16LE(numChannels, 22); // NumChannels
-  wavHeader.writeUInt32LE(sampleRate, 24); // SampleRate
-  wavHeader.writeUInt32LE(byteRate, 28); // ByteRate
-  wavHeader.writeUInt16LE(blockAlign, 32); // BlockAlign
-  wavHeader.writeUInt16LE(16, 34); // BitsPerSample
-
-  // data sub-chunk
-  wavHeader.write('data', 36); // Subchunk2ID
-  wavHeader.writeUInt32LE(pcmData.length, 40); // Subchunk2Size
-
-  // Combine header and PCM data
-  return Buffer.concat([wavHeader, pcmData]);
+function writeString(view: DataView, offset: number, string: string) {
+  for (let i = 0; i < string.length; i++) {
+    view.setUint8(offset + i, string.charCodeAt(i));
+  }
 }
 
-export async function POST(req: NextRequest) {
-  try {
-    console.log("Received a POST request to /api/save-audio");
+function createWavHeader(length: number, sampleRate: number, numChannels: number, bitsPerSample: number) {
+  const buffer = new ArrayBuffer(44);
+  const view = new DataView(buffer);
 
-    // Read the request body as an ArrayBuffer
-    const arrayBuffer = await req.arrayBuffer();
-    console.log("Request body received");
+  /* RIFF identifier */
+  writeString(view, 0, 'RIFF');
+  /* RIFF chunk length */
+  view.setUint32(4, 36 + length, true);
+  /* RIFF type */
+  writeString(view, 8, 'WAVE');
+  /* Format chunk identifier */
+  writeString(view, 12, 'fmt ');
+  /* Format chunk length */
+  view.setUint32(16, 16, true);
+  /* Sample format (PCM) */
+  view.setUint16(20, 1, true);
+  /* Channel count */
+  view.setUint16(22, numChannels, true);
+  /* Sample rate */
+  view.setUint32(24, sampleRate, true);
+  /* Byte rate (sample rate * block align) */
+  view.setUint32(28, sampleRate * numChannels * bitsPerSample / 8, true);
+  /* Block align (channel count * bytes per sample) */
+  view.setUint16(32, numChannels * bitsPerSample / 8, true);
+  /* Bits per sample */
+  view.setUint16(34, bitsPerSample, true);
+  /* Data chunk identifier */
+  writeString(view, 36, 'data');
+  /* Data chunk length */
+  view.setUint32(40, length, true);
+
+  return Buffer.from(buffer);
+}
+
+export async function POST(request: NextRequest) {
+  try {
+    const arrayBuffer = await request.arrayBuffer();
 
     if (!arrayBuffer || arrayBuffer.byteLength === 0) {
-      console.warn("No audio data received");
-      return NextResponse.json(
-        { error: "No audio data received" },
-        { status: 400 },
-      );
+      return NextResponse.json({ error: 'No audio data received' }, { status: 400 });
     }
 
-    // Convert ArrayBuffer to Node.js Buffer
-    const pcmBuffer = Buffer.from(arrayBuffer);
-    console.log(`PCM audio buffer length: ${pcmBuffer.length}`);
+    // Convert ArrayBuffer to Int16Array
+    const int16Array = new Int16Array(arrayBuffer);
 
-    // Create WAV buffer
-    const wavBuffer = createWavBuffer(pcmBuffer, 24000, 1);
-    console.log(`WAV audio buffer length: ${wavBuffer.length}`);
+    // Create WAV header and data
+    const wavHeader = createWavHeader(int16Array.length * 2, 24000, 1, 16);
+    const wavData = Buffer.concat([wavHeader, Buffer.from(int16Array.buffer)]);
 
     // Generate a unique filename
-    const filename = `recording-${Date.now()}.wav`;
-    console.log(`Generated filename: ${filename}`);
+    const filename = `user-input-${Date.now()}.wav`;
 
-    // Define the directory where you want to save the recordings
-    const dir = path.join(process.cwd(), "recordings");
-    console.log(`Recording directory: ${dir}`);
+    // Define the directory to save the recordings
+    const dir = path.join(process.cwd(), 'user_recordings');
     await fs.mkdir(dir, { recursive: true });
-    console.log("Ensured recordings directory exists");
 
     // Save the WAV file
     const filePath = path.join(dir, filename);
-    await fs.writeFile(filePath, wavBuffer);
-    console.log(`Audio file saved at ${filePath}`);
+    await fs.writeFile(filePath, wavData);
 
-    return NextResponse.json({ message: "Audio saved", filename: filename });
+    return NextResponse.json({ message: 'Audio saved', filename });
   } catch (error) {
-    console.error("Error saving audio:", error);
-    return NextResponse.json({ error: "Error saving audio" }, { status: 500 });
+    console.error('Error saving audio:', error);
+    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
   }
 }

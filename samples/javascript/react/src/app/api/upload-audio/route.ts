@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { RTClient } from 'rt-client';
 import { promises as fs } from 'fs';
 import path from 'path';
+import { Buffer } from 'buffer';
 
 export const runtime = 'nodejs';
 
@@ -37,35 +38,34 @@ export async function POST(request: NextRequest) {
 
     const transcription = inputAudioItem.transcription || '';
 
-    // Trigger a response generation
-    await client.generateResponse();
-
-    // Handle the assistant's response
+    // Generate the assistant's response
+    const response = await client.generateResponse();
     const responses = [];
-    for await (const serverEvent of client.events()) {
-      if (serverEvent.type === 'response') {
-        for await (const item of serverEvent) {
-          if (item.type === 'message' && item.role === 'assistant') {
-            let content = '';
-            for await (const contentPart of item) {
-              if (contentPart.type === 'text') {
-                for await (const textChunk of contentPart.textChunks()) {
-                  content += textChunk;
-                }
-              }
+
+    // Process the response items
+    for await (const item of response) {
+      if (item.type === 'message' && item.role === 'assistant') {
+        let content = '';
+        for await (const contentPart of item) {
+          if (contentPart.type === 'text') {
+            for await (const textChunk of contentPart.textChunks()) {
+              content += textChunk;
             }
-            responses.push({ type: 'assistant', content });
+          } else if (contentPart.type === 'audio') {
+            // Handle assistant audio if needed
+            // For example, collect audio chunks or save them
           }
         }
+        responses.push({ type: 'assistant', content });
       }
     }
 
-    return NextResponse.json({
-      transcription,
-      responses,
-    });
+    // Close the client
+    await client.close();
+
+    return NextResponse.json({ transcription, responses });
   } catch (error) {
-    console.error('Error handling file upload:', error);
+    console.error('Error processing uploaded audio:', error);
     return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
   }
 } 

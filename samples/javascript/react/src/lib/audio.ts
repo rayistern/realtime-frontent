@@ -8,6 +8,7 @@ export class AudioHandler {
   private nextPlayTime: number = 0;
   private isPlaying: boolean = false;
   private playbackQueue: AudioBufferSourceNode[] = [];
+  private recordedChunks: Float32Array[] = [];
 
   constructor() {
     this.context = new AudioContext({ sampleRate: this.sampleRate });
@@ -17,7 +18,7 @@ export class AudioHandler {
     await this.context.audioWorklet.addModule("/audio-processor.js");
   }
 
-  async startRecording(onChunk: (chunk: Uint8Array) => void) {
+  async startRecording() {
     try {
       if (!this.workletNode) {
         await this.initialize();
@@ -41,16 +42,7 @@ export class AudioHandler {
 
       this.workletNode.port.onmessage = (event) => {
         if (event.data.eventType === "audio") {
-          const float32Data = event.data.audioData;
-          const int16Data = new Int16Array(float32Data.length);
-
-          for (let i = 0; i < float32Data.length; i++) {
-            const s = Math.max(-1, Math.min(1, float32Data[i]));
-            int16Data[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
-          }
-
-          const uint8Data = new Uint8Array(int16Data.buffer);
-          onChunk(uint8Data);
+          this.recordedChunks.push(event.data.audioData);
         }
       };
 
@@ -64,7 +56,7 @@ export class AudioHandler {
     }
   }
 
-  stopRecording() {
+  async stopRecording(): Promise<Uint8Array> {
     if (!this.workletNode || !this.source || !this.stream) {
       throw new Error("Recording not started");
     }
@@ -74,7 +66,40 @@ export class AudioHandler {
     this.workletNode.disconnect();
     this.source.disconnect();
     this.stream.getTracks().forEach((track) => track.stop());
+
+    // Merge recorded chunks
+    const combinedBuffer = this.mergeBuffers(this.recordedChunks);
+    this.recordedChunks = [];
+
+    // Convert Float32Array to Int16Array
+    const int16Buffer = this.float32ToInt16(combinedBuffer);
+    return new Uint8Array(int16Buffer.buffer);
   }
+
+  private mergeBuffers(chunks: Float32Array[]): Float32Array {
+    let length = 0;
+    chunks.forEach((chunk) => {
+      length += chunk.length;
+    });
+    const result = new Float32Array(length);
+    let offset = 0;
+    chunks.forEach((chunk) => {
+      result.set(chunk, offset);
+      offset += chunk.length;
+    });
+    return result;
+  }
+
+  private float32ToInt16(buffer: Float32Array): Int16Array {
+    const l = buffer.length;
+    const result = new Int16Array(l);
+    for (let i = 0; i < l; i++) {
+      const s = Math.max(-1, Math.min(1, buffer[i]));
+      result[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
+    }
+    return result;
+  }
+
   startStreamingPlayback() {
     this.isPlaying = true;
     this.nextPlayTime = this.context.currentTime;
@@ -131,4 +156,30 @@ export class AudioHandler {
     this.stream?.getTracks().forEach((track) => track.stop());
     await this.context.close();
   }
+}
+
+async function processWavFile(file: File): Promise<Uint8Array> {
+  const arrayBuffer = await file.arrayBuffer();
+  const audioContext = new AudioContext();
+  const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+  
+  // Resample to 24kHz mono
+  const offlineContext = new OfflineAudioContext(1, audioBuffer.length, 24000);
+  const source = offlineContext.createBufferSource();
+  source.buffer = audioBuffer;
+  source.connect(offlineContext.destination);
+  source.start();
+  
+  const resampledBuffer = await offlineContext.startRendering();
+  
+  // Convert to 16-bit PCM
+  const pcmData = new Int16Array(resampledBuffer.length);
+  const channelData = resampledBuffer.getChannelData(0);
+  
+  for (let i = 0; i < resampledBuffer.length; i++) {
+    const s = Math.max(-1, Math.min(1, channelData[i]));
+    pcmData[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
+  }
+  
+  return new Uint8Array(pcmData.buffer);
 }
