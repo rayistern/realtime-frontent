@@ -26,6 +26,7 @@ import {
   RTInputAudioItem,
   RTResponse,
   TurnDetection,
+  RTAudioContent,
 } from "rt-client";
 import { AudioHandler } from "@/lib/audio";
 
@@ -57,6 +58,7 @@ const ChatInterface = () => {
   const [isConnecting, setIsConnecting] = useState(false);
   const clientRef = useRef<RTClient | null>(null);
   const audioHandlerRef = useRef<AudioHandler | null>(null);
+  const [selectedAudioFile, setSelectedAudioFile] = useState<File | null>(null);
 
   const addTool = () => {
     setTools([...tools, { name: "", parameters: "", returnValue: "" }]);
@@ -122,44 +124,37 @@ const ChatInterface = () => {
     }
   };
 
-  const handleResponse = async (response: RTResponse) => {
-    for await (const item of response) {
-      if (item.type === "message" && item.role === "assistant") {
-        const message: Message = {
-          type: item.role,
-          content: "",
-        };
-        setMessages((prevMessages) => [...prevMessages, message]);
-        for await (const content of item) {
-          if (content.type === "text") {
-            for await (const text of content.textChunks()) {
-              message.content += text;
-              setMessages((prevMessages) => {
-                prevMessages[prevMessages.length - 1].content = message.content;
-                return [...prevMessages];
-              });
-            }
-          } else if (content.type === "audio") {
-            const textTask = async () => {
-              for await (const text of content.transcriptChunks()) {
+  const handleResponse = async (event: RTResponse) => {
+    try {
+      for await (const item of event) {
+        console.log('Received item:', item);
+        if (item.type === 'message' && item.role === 'assistant') {
+          const message: Message = {
+            type: item.role,
+            content: '',
+          };
+          setMessages((prevMessages) => [...prevMessages, message]);
+
+          // Iterate over the contents of the item
+          for await (const content of item) {
+            console.log('Processing content:', content);
+
+            if (content.type === 'text') {
+              for await (const text of content.textChunks()) {
                 message.content += text;
                 setMessages((prevMessages) => {
-                  prevMessages[prevMessages.length - 1].content =
-                    message.content;
+                  prevMessages[prevMessages.length - 1].content = message.content;
                   return [...prevMessages];
                 });
               }
-            };
-            const audioTask = async () => {
-              audioHandlerRef.current?.startStreamingPlayback();
-              for await (const audio of content.audioChunks()) {
-                audioHandlerRef.current?.playChunk(audio);
-              }
-            };
-            await Promise.all([textTask(), audioTask()]);
+            } else if (content.type === 'audio') {
+              await handleAudioContent(content);
+            }
           }
         }
       }
+    } catch (error) {
+      console.error('Error handling response:', error);
     }
   };
 
@@ -242,6 +237,76 @@ const ChatInterface = () => {
         setIsRecording(false);
       } catch (error) {
         console.error("Failed to stop recording:", error);
+      }
+    }
+  };
+
+  const handleAudioContent = async (content: RTAudioContent) => {
+    // Start streaming playback
+    audioHandlerRef.current?.startStreamingPlayback();
+
+    // Collect audio chunks
+    const audioChunks: Uint8Array[] = [];
+
+    for await (const audio of content.audioChunks()) {
+      audioHandlerRef.current?.playChunk(audio);
+      audioChunks.push(audio);
+    }
+
+    // Concatenate all audio chunks into one Uint8Array
+    const totalLength = audioChunks.reduce((sum, chunk) => sum + chunk.length, 0);
+    const combinedAudio = new Uint8Array(totalLength);
+    let offset = 0;
+    for (const chunk of audioChunks) {
+      combinedAudio.set(chunk, offset);
+      offset += chunk.length;
+    }
+
+    // Send the concatenated audio data to the server
+    try {
+      console.log('Sending assistant audio to server');
+      const response = await fetch('/api/save-assistant-audio', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/octet-stream',
+        },
+        body: combinedAudio,
+      });
+      if (!response.ok) {
+        console.error('Failed to save assistant audio on server:', response.statusText);
+      } else {
+        console.log('Assistant audio saved on server');
+      }
+    } catch (error) {
+      console.error('Error saving assistant audio on server:', error);
+    }
+  };
+
+  const handleAudioUpload = async () => {
+    if (selectedAudioFile && isConnected) {
+      try {
+        const formData = new FormData();
+        formData.append('file', selectedAudioFile);
+
+        const response = await fetch('/api/upload-audio', {
+          method: 'POST',
+          body: formData,
+        });
+
+        if (!response.ok) {
+          console.error('Failed to upload audio file');
+        } else {
+          const data = await response.json();
+
+          // Update messages state with the transcription and assistant's response
+          setMessages((prevMessages) => [
+            ...prevMessages,
+            { type: 'user', content: data.transcription },
+            ...data.responses.map((res: any) => ({ type: res.type, content: res.content })),
+          ]);
+        }
+      } catch (error) {
+        console.error('Error uploading audio file:', error);
       }
     }
   };
@@ -471,6 +536,21 @@ const ChatInterface = () => {
             <Button onClick={sendMessage} disabled={!isConnected}>
               <Send className="w-4 h-4" />
             </Button>
+
+            {/* New Upload Button */}
+            <div>
+              <input
+                type="file"
+                accept="audio/*"
+                onChange={(e) => {
+                  setSelectedAudioFile(e.target.files?.[0] || null);
+                }}
+                disabled={!isConnected}
+              />
+              <Button onClick={handleAudioUpload} disabled={!selectedAudioFile || !isConnected}>
+                Upload Audio
+              </Button>
+            </div>
           </div>
         </div>
       </div>
