@@ -59,6 +59,7 @@ const ChatInterface = () => {
   const clientRef = useRef<RTClient | null>(null);
   const audioHandlerRef = useRef<AudioHandler | null>(null);
   const [selectedAudioFile, setSelectedAudioFile] = useState<File | null>(null);
+  const [voice, setVoice] = useState<Voice>("echo");
 
   const addTool = () => {
     setTools([...tools, { name: "", parameters: "", returnValue: "" }]);
@@ -95,6 +96,7 @@ const ChatInterface = () => {
           : null;
 
         await clientRef.current.configure({
+          voice,
           instructions: instructions?.length > 0 ? instructions : undefined,
           input_audio_transcription: { model: "whisper-1" },
           turn_detection: turnDetection,
@@ -147,12 +149,19 @@ const ChatInterface = () => {
               for await (const text of content.textChunks()) {
                 message.content += text;
                 setMessages((prevMessages) => {
-                  prevMessages[prevMessages.length - 1].content = message.content;
+                  const lastMessage = prevMessages[prevMessages.length - 1];
+                  lastMessage.content = message.content;
                   return [...prevMessages];
                 });
               }
             } else if (content.type === "audio") {
-              await handleAudioContent(content);
+              try {
+                await handleAudioContent(content);
+              } catch (error) {
+                console.error("Error handling audio content:", error);
+                // Continue processing other content even if audio fails
+                continue;
+              }
             }
           }
         }
@@ -297,28 +306,26 @@ const ChatInterface = () => {
 
   const handleAudioUpload = async () => {
     if (!selectedAudioFile || !isConnected || !clientRef.current) return;
-    
+      
     try {
-      // Keep existing configuration, just disable transcription
-      const currentConfig = clientRef.current.session || {};
+      // Configure with just the necessary settings for audio upload
       await clientRef.current.configure({
-        ...currentConfig,
         input_audio_transcription: null,
         turn_detection: null
       });
-
+  
       const pcmData = await processWavFile(selectedAudioFile);
-      
+        
       // Send audio in chunks
       const CHUNK_SIZE = 4800;
       for (let i = 0; i < pcmData.length; i += CHUNK_SIZE) {
         const chunk = pcmData.slice(i, i + CHUNK_SIZE);
         await clientRef.current.sendAudio(chunk);
       }
-      
+        
       await clientRef.current.commitAudio();
       const response = await clientRef.current.generateResponse();
-      
+        
       if (response) {
         await handleResponse(response);
       }
@@ -551,6 +558,27 @@ const ChatInterface = () => {
                     <SelectContent>
                       <SelectItem value="text">Text</SelectItem>
                       <SelectItem value="audio">Audio</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Voice</label>
+                  <Select
+                    value={voice}
+                    onValueChange={setVoice}
+                    disabled={isConnected}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="echo">Echo</SelectItem>
+                      <SelectItem value="alloy">Alloy</SelectItem>
+                      <SelectItem value="shimmer">Shimmer</SelectItem>
+                      <SelectItem value="coral">Coral</SelectItem>
+                      <SelectItem value="sage">Sage</SelectItem>
+                      <SelectItem value="verse">Verse</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>

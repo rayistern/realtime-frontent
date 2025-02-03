@@ -103,7 +103,7 @@ An example `session.update` that configures several aspects of the session, incl
 {
   "type": "session.update",
   "session": {
-    "voice": "alloy",
+    "voice": "echo",
     "instructions": "Call provided tools if appropriate for the user's input.",
     "input_audio_format": "pcm16",
     "input_audio_transcription": {
