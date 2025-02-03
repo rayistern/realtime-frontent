@@ -411,3 +411,5 @@ FodyWeavers.xsd
 /samples/javascript/react/assistant_recordings
 /samples/javascript/react/recordings
 /samples/javascript/react/user_recordings
+/assistant_responses/
+/audio_files/
