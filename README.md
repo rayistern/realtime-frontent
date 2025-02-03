@@ -41,4 +41,4 @@ Then open http://localhost:3000
 
 ## Requirements
 - Node.js 18+
-- Azure OpenAI access with gpt-4o-realtime-preview model
+- Azure OpenAI
