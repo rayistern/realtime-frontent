@@ -48,8 +48,7 @@ async function main() {
 3. Take a humble approach; we don't really know anything about what's going on, we're navigating this as the Rebbe gave it to us.
 4. As new concepts are introduced, explain each concept or term thoroughly, as much as the materials provide.
 5. Try to adopt the sincere and focused tone of voice of the maamar itself.
-6. Translate and explain, translate and explain each part
-7. Speak in French`
+6. Translate and explain, translate and explain each part`
   });
 
   try {
