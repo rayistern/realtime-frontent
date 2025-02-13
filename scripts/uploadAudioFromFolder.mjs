@@ -18,9 +18,13 @@ async function saveAssistantAudio(audioData, originalFileName) {
   const baseName = path.parse(originalFileName).name;
   const outputPath = path.join(outputDir, `${baseName}-response-${Date.now()}.wav`);
 
-  // Create WAV file with header
-  const wavHeader = createWavHeader(audioData.length, 24000, 1, 16);
-  const wavFile = Buffer.concat([wavHeader, Buffer.from(audioData.buffer)]);
+  // Calculate proper audio length
+  const audioLength = audioData.length;
+  const wavHeader = createWavHeader(audioLength, 24000, 1, 16);
+  
+  // Ensure proper buffer handling
+  const audioBuffer = Buffer.from(audioData.buffer);
+  const wavFile = Buffer.concat([wavHeader, audioBuffer], wavHeader.length + audioLength);
   
   await fs.writeFile(outputPath, wavFile);
   console.log(`Assistant audio saved to: ${outputPath}`);
@@ -48,7 +52,10 @@ async function main() {
 3. Take a humble approach; we don't really know anything about what's going on, we're navigating this as the Rebbe gave it to us.
 4. As new concepts are introduced, explain each concept or term thoroughly, as much as the materials provide.
 5. Try to adopt the sincere and focused tone of voice of the maamar itself.
-6. Translate and explain, translate and explain each part`
+6. Translate and explain, translate and explain each part
+7. Don't ramble on - keep it conversational, and very short responses. Like sometimes one word is enough, you know what I mean.
+8. Often a clip will cut in the middle of a sentence, so don't anticipate what is coming next. Just hold space for that part.
+`
   });
 
   try {
@@ -59,33 +66,36 @@ async function main() {
     const supportedExtensions = ['.wav', '.mp3', '.m4a', '.aac'];
     const audioFiles = files.filter(file => supportedExtensions.includes(path.extname(file).toLowerCase()));
 
-    console.log(`Found ${audioFiles.length} audio files in ${audioFolder}`);
-
-    for (const file of audioFiles) {
-      const filePath = path.join(audioFolder, file);
-      console.log(`\nProcessing file: ${file}`);
-
+    console.log(`Starting session with ${audioFiles.length} files to process`);
+    
+    for (const [index, file] of audioFiles.entries()) {
+      console.log(`\n[${index + 1}/${audioFiles.length}] Processing file: ${file}`);
+      
       try {
-        console.log('Processing audio file...');
-        const { pcmData, sampleRate, numChannels, bitsPerSample } = await processAudioFile(filePath);
-        console.log(`Audio converted to PCM: ${sampleRate}Hz, ${numChannels} channels, ${bitsPerSample}-bit`);
-        console.log(`Total PCM data size: ${pcmData.length} bytes`);
+        // Add delay before processing
+        console.log('Waiting 3 seconds before next file...');
+        await new Promise(resolve => setTimeout(resolve, 3000));
 
-        console.log('Sending audio chunks...');
+        const filePath = path.join(audioFolder, file);
+        const { pcmData, sampleRate, numChannels, bitsPerSample } = await processAudioFile(filePath);
+        console.log(`Audio stats: ${sampleRate}Hz, ${numChannels} channels, ${bitsPerSample}-bit, ${pcmData.length} bytes`);
+
+        // Add small delay between chunks
         const CHUNK_SIZE = 4800;
-        let chunkCount = 0;
         for (let i = 0; i < pcmData.length; i += CHUNK_SIZE) {
-          chunkCount++;
-          console.log(`Sending chunk ${chunkCount}`);
-          const chunk = pcmData.slice(i, i + CHUNK_SIZE);
-          await client.sendAudio(chunk);
+          await new Promise(resolve => setTimeout(resolve, 50));
+          await client.sendAudio(pcmData.slice(i, i + CHUNK_SIZE));
         }
 
-        console.log('Committing audio...');
+        console.log('Audio chunks sent, committing...');
         const inputAudioItem = await client.commitAudio();
         console.log('Waiting for transcription...');
         await inputAudioItem.waitForCompletion();
-        console.log(`Transcription: ${inputAudioItem.transcription}`);
+        console.log(`Transcription complete: ${inputAudioItem.transcription?.length || 0} chars`);
+
+        // Add longer delay after response
+        console.log('Waiting 5 seconds after response...');
+        await new Promise(resolve => setTimeout(resolve, 5000));
 
         const response = await client.generateResponse();
         if (response) {
@@ -117,15 +127,14 @@ async function main() {
             }
           }
         }
-
-        // Wait a bit between files
-        await new Promise(resolve => setTimeout(resolve, 1000));
       } catch (error) {
         console.error(`Error processing file ${file}:`, error);
+        console.log('Waiting 10 seconds before continuing...');
+        await new Promise(resolve => setTimeout(resolve, 10000));
       }
     }
   } finally {
-    // Close the client only after all files are processed
+    console.log('Closing client...');
     await client.close();
   }
 }
