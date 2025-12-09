@@ -48,7 +48,16 @@ npm run dev
 ```
 Then open http://localhost:3000
 
-Note: The app reads the `.env` file from the project root directory.
+### Environment Variables
+The app reads the `.env` file from the project root directory. For the frontend to access your credentials automatically, use the `NEXT_PUBLIC_` prefixed variables:
+
+```
+NEXT_PUBLIC_AZURE_OPENAI_ENDPOINT=your_endpoint
+NEXT_PUBLIC_AZURE_OPENAI_API_KEY=your_key
+NEXT_PUBLIC_AZURE_OPENAI_DEPLOYMENT=your_deployment
+```
+
+Note: After changing `.env` values, restart the dev server for changes to take effect.
 
 ## Requirements
 - Node.js 18+
