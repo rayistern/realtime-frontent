@@ -26,7 +26,7 @@ AZURE_OPENAI_DEPLOYMENT=your_deployment
 node scripts/uploadAudioFromFolder.mjs
 ```
 
-## 2. Next.js Chat Interface (src/app)
+## 2. Next.js Chat Interface (samples/javascript/react)
 
 Web interface built with Next.js for real-time audio conversations.
 
@@ -37,15 +37,18 @@ Web interface built with Next.js for real-time audio conversations.
 - Session history maintained
 
 ### Configuration
-- System prompt and voice settings: Edit `src/app/chat-interface.tsx` in the `handleConnect` function
+- System prompt and voice settings: Edit `samples/javascript/react/src/app/chat-interface.tsx` in the `handleConnect` function
 - Audio settings: Modify `input_audio_transcription` and `turn_detection` in `handleAudioUpload` function
 
 ### Run
 ```bash
+cd samples/javascript/react
 npm install
 npm run dev
 ```
 Then open http://localhost:3000
+
+Note: The app reads the `.env` file from the project root directory.
 
 ## Requirements
 - Node.js 18+

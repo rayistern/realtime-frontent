@@ -1,4 +1,9 @@
 import type { NextConfig } from "next";
+import path from "path";
+import { config } from "dotenv";
+
+// Load .env from project root (3 levels up)
+config({ path: path.resolve(__dirname, "../../../.env") });
 
 const nextConfig: NextConfig = {
   webpack: (config, { isServer }) => {
